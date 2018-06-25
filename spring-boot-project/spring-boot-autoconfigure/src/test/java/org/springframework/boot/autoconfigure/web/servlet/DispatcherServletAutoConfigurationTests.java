@@ -35,6 +35,7 @@ import org.springframework.web.multipart.MultipartResolver;
 import org.springframework.web.servlet.DispatcherServlet;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 /**
  * Tests for {@link DispatcherServletAutoConfiguration}.
@@ -65,6 +66,7 @@ public class DispatcherServletAutoConfigurationTests {
 				.run((context) -> {
 					assertThat(context).doesNotHaveBean(ServletRegistrationBean.class);
 					assertThat(context).doesNotHaveBean(DispatcherServlet.class);
+					assertThat(context).doesNotHaveBean(DispatcherServletPathProvider.class);
 				});
 	}
 
@@ -73,7 +75,7 @@ public class DispatcherServletAutoConfigurationTests {
 	@Test
 	public void registrationOverrideWithDispatcherServletWrongName() {
 		this.contextRunner
-				.withUserConfiguration(CustomDispatcherServletDifferentName.class)
+				.withUserConfiguration(CustomDispatcherServletDifferentName.class, CustomDispatcherServletPathProvider.class)
 				.run((context) -> {
 					ServletRegistrationBean<?> registration = context
 							.getBean(ServletRegistrationBean.class);
@@ -86,7 +88,7 @@ public class DispatcherServletAutoConfigurationTests {
 
 	@Test
 	public void registrationOverrideWithAutowiredServlet() {
-		this.contextRunner.withUserConfiguration(CustomAutowiredRegistration.class)
+		this.contextRunner.withUserConfiguration(CustomAutowiredRegistration.class, CustomDispatcherServletPathProvider.class)
 				.run((context) -> {
 					ServletRegistrationBean<?> registration = context
 							.getBean(ServletRegistrationBean.class);
@@ -110,6 +112,32 @@ public class DispatcherServletAutoConfigurationTests {
 					assertThat(context.getBean(DispatcherServletPathProvider.class)
 							.getServletPath()).isEqualTo("/spring");
 				});
+	}
+
+	@Test
+	public void pathProviderWhenMultipleDispatcherServletsShouldThrowError() {
+		this.contextRunner.withUserConfiguration(CustomDispatcherServletDifferentName.class)
+				.run((context) -> assertThat(context.getStartupFailure()).isNotNull());
+	}
+
+	@Test
+	public void pathProviderWhenCustomDefaultDispatcherServletShouldReturnConfiguredServletPath() {
+		this.contextRunner.withUserConfiguration(CustomDispatcherServletSameName.class)
+				.withPropertyValues("server.servlet.path:/spring")
+				.run((context) -> assertThat(context.getBean(DispatcherServletPathProvider.class)
+						.getServletPath()).isEqualTo("/spring"));
+	}
+
+	@Test
+	public void pathProviderWhenCustomRegistrationBeanSameNameShouldThrowError() {
+		this.contextRunner.withUserConfiguration(CustomDispatcherServletRegistrationSameName.class)
+				.run((context) -> assertThat(context.getStartupFailure()).isNotNull());
+	}
+
+	@Test
+	public void pathProviderWhenCustomRegistrationBeanDifferentNameShouldThrowError() {
+		this.contextRunner.withUserConfiguration(CustomAutowiredRegistration.class)
+				.run((context) -> assertThat(context.getStartupFailure()).isNotNull());
 	}
 
 	@Test
@@ -199,6 +227,16 @@ public class DispatcherServletAutoConfigurationTests {
 	}
 
 	@Configuration
+	protected static class CustomDispatcherServletPathProvider {
+
+		@Bean
+		public DispatcherServletPathProvider dispatcherServletPathProvider() {
+			return mock(DispatcherServletPathProvider.class);
+		}
+
+	}
+
+	@Configuration
 	protected static class CustomAutowiredRegistration {
 
 		@Bean
@@ -208,6 +246,11 @@ public class DispatcherServletAutoConfigurationTests {
 					dispatcherServlet, "/foo");
 			registration.setName("customDispatcher");
 			return registration;
+		}
+
+		@Bean
+		public DispatcherServletPathProvider dispatcherServletPathProvider() {
+			return mock(DispatcherServletPathProvider.class);
 		}
 
 	}
@@ -230,6 +273,37 @@ public class DispatcherServletAutoConfigurationTests {
 			return new MockMultipartResolver();
 		}
 
+	}
+
+	@Configuration
+	protected static class NonDefaultDispatcherServlet {
+
+		@Bean
+		public DispatcherServlet testDispatcherServlet() {
+			return new DispatcherServlet();
+		}
+	}
+
+	@Configuration
+	protected static class CustomDispatcherServletSameName {
+
+		@Bean(name = DispatcherServletAutoConfiguration.DEFAULT_DISPATCHER_SERVLET_BEAN_NAME)
+		public DispatcherServlet dispatcherServlet() {
+			return new DispatcherServlet();
+		}
+	}
+
+	@Configuration
+	protected static class CustomDispatcherServletRegistrationSameName {
+
+		@Bean(name = DispatcherServletAutoConfiguration.DEFAULT_DISPATCHER_SERVLET_REGISTRATION_BEAN_NAME)
+		public ServletRegistrationBean<DispatcherServlet> dispatcherServletRegistration(
+				DispatcherServlet dispatcherServlet) {
+			ServletRegistrationBean<DispatcherServlet> registration = new ServletRegistrationBean<>(
+					dispatcherServlet, "/foo");
+			registration.setName("customDispatcher");
+			return registration;
+		}
 	}
 
 	private static class MockMultipartResolver implements MultipartResolver {
